@@ -58,7 +58,7 @@ void pwm_callback(const void *msgin){
 
   float mag = fabs(value);      
   uint8_t pwm_value = (uint8_t) roundf(mag * 255.0f);  // necesita <math.h>
-  if (pwm_value > 255) pwm_value = 255;  
+  if (pwm_value > 255) pwm_value = 255;  // Restringe el valor a  entre -1 y 1, y luego escala a 0-255
 
   if (value >= 0.0f) {
     digitalWrite(LED_PIN_P, HIGH);
