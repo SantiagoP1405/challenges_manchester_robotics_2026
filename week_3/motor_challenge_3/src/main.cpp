@@ -27,11 +27,30 @@ rcl_node_t node;
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
 
+// Executes a statement (X) every N milliseconds
+#define EXECUTE_EVERY_N_MS(MS, X)  do { \
+  static volatile int64_t init = -1; \
+  if (init == -1) { init = uxr_millis();} \
+  if (uxr_millis() - init > MS) { X; init = uxr_millis();} \
+} while (0)\
+
 void error_loop() {
   while(1) {
     delay(100);
   }
 }
+
+enum states {
+  WAITING_AGENT,        // Waiting for ROS 2 agent connection
+  AGENT_AVAILABLE,      // Agent detected
+  AGENT_CONNECTED,      // Successfully connected
+  AGENT_DISCONNECTED    // Connection lost
+} state;
+
+// ======== Function Prototypes ========
+bool create_entities();
+void destroy_entities();
+
 
 void pwm_callback(const void *msgin){
   const std_msgs__msg__Float32 *msg_in = (const std_msgs__msg__Float32 *)msgin;
@@ -66,6 +85,9 @@ void setup(){
   set_microros_serial_transports(Serial);
   delay(2000);
 
+}
+
+bool create_entities() {
   allocator = rcl_get_default_allocator();
 
   RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
@@ -80,10 +102,45 @@ void setup(){
   std_msgs__msg__Float32__init(&pwm_msg);
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_pwm, &pwm_msg, &pwm_callback, ON_NEW_DATA));  
-  
+
+  return true;
+}
+
+void destroy_entities() {
+  rcl_subscription_fini(&subscriber_pwm, &node);
+  rcl_node_fini(&node);
+  rclc_executor_fini(&executor);
+  rclc_support_fini(&support);
 }
 
 void loop(){
-  RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
-  delay(10);
+  switch (state) {
+
+    case WAITING_AGENT:
+      EXECUTE_EVERY_N_MS(500, state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_AVAILABLE : WAITING_AGENT;);
+      break;
+
+    case AGENT_AVAILABLE:
+      state = (true == create_entities()) ? AGENT_CONNECTED : WAITING_AGENT;
+      if (state == WAITING_AGENT) {
+        destroy_entities();
+      };
+      break;
+
+    case AGENT_CONNECTED:
+      EXECUTE_EVERY_N_MS(200, state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_CONNECTED : AGENT_DISCONNECTED;);
+      if (state == AGENT_CONNECTED) {
+        rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+        delay(10);
+      }
+      break;
+
+    case AGENT_DISCONNECTED:
+      destroy_entities();
+      state = WAITING_AGENT;
+      break;
+      
+    default:
+      break;
+  }
 }
