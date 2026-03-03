@@ -8,43 +8,43 @@
 #include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/string.h>
 
-// ── Pines y configuración ──────────────────────────────────────
-#define variador   34
-#define PWM_PIN    26
-#define In1        23
-#define In2        22
-#define freq       5000
+// Pines y configuración 
+#define variador 34
+#define PWM_PIN 26
+#define In1 23
+#define In2 22
+#define freq 5000
 #define resolution 8
-#define PWM1_Ch    0
+#define PWM1_Ch 0
 
-// ── Variables globales ─────────────────────────────────────────
+// Variables globales 
 float voltaje = 0;
-float duty    = 0;
-int   pot     = 0;
-int   pwm     = 0;
-float Vcc     = 3.3;
-bool  motorEnMovimiento = false;
+float duty = 0;
+int pot = 0;
+int pwm = 0;
+float Vcc = 3.3;
+bool motorEnMovimiento = false;
 
-// ── Objetos micro-ROS ──────────────────────────────────────────
-rcl_publisher_t  pub_duty;      // publica duty cycle (%)
-rcl_publisher_t  pub_voltaje;   // publica voltaje (V)
-rcl_publisher_t  pub_pwm;       // publica valor PWM crudo 0-255
-rcl_publisher_t  pub_status;    // publica estado del motor
+// Objetos micro-ROS 
+rcl_publisher_t pub_duty;      // publica duty cycle (%)
+rcl_publisher_t pub_voltaje;   // publica voltaje (V)
+rcl_publisher_t pub_pwm;       // publica valor PWM crudo 0-255
+rcl_publisher_t pub_status;    // publica estado del motor
 rcl_subscription_t sub_cmd;     // recibe comandos "D" / "I" / "S"
 
 std_msgs__msg__Float32 msg_duty;
 std_msgs__msg__Float32 msg_voltaje;
 std_msgs__msg__Float32 msg_pwm;
-std_msgs__msg__String  msg_cmd;
-std_msgs__msg__String  status;
+std_msgs__msg__String msg_cmd;
+std_msgs__msg__String status;
 
 rclc_executor_t executor;
-rclc_support_t  support;
+rclc_support_t support;
 rcl_allocator_t allocator;
-rcl_node_t      node;
-rcl_timer_t     timer;
+rcl_node_t node;
+rcl_timer_t timer;
 
-// ── Macros de manejo de errores ────────────────────────────────
+// Macros de manejo de errores 
 #define RCCHECK(fn)  { rcl_ret_t temp_rc = fn; if(temp_rc != RCL_RET_OK){ errorLoop(); } }
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; (void)temp_rc; }
 
@@ -52,7 +52,7 @@ void errorLoop() {
   while(true) { delay(100); }   // parpadeo o indicador de error
 }
 
-// ── Funciones del motor ────────────────────────────────────────
+// Funciones del motor
 void detener() {
   digitalWrite(In1, LOW);
   digitalWrite(In2, LOW);
@@ -126,13 +126,13 @@ void timer_callback(rcl_timer_t* timer, int64_t last_call_time) {
   }
 }
 
-// ── Setup ──────────────────────────────────────────────────────
+// Setup
 void setup() {
   // Pines
-  pinMode(variador, INPUT);
-  pinMode(PWM_PIN,  OUTPUT);
-  pinMode(In1,      OUTPUT);
-  pinMode(In2,      OUTPUT);
+  pinMode(variador,INPUT);
+  pinMode(PWM_PIN,OUTPUT);
+  pinMode(In1, OUTPUT);
+  pinMode(In2, OUTPUT);
 
   // PWM
   ledcSetup(PWM1_Ch, freq, resolution);
