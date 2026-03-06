@@ -48,9 +48,25 @@ rcl_timer_t timer;
 #define RCCHECK(fn)  { rcl_ret_t temp_rc = fn; if(temp_rc != RCL_RET_OK){ errorLoop(); } }
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; (void)temp_rc; }
 
+#define EXECUTE_EVERY_N_MS(MS, X)  do { \
+  static volatile int64_t init = -1; \
+  if (init == -1) { init = uxr_millis();} \
+  if (uxr_millis() - init > MS) { X; init = uxr_millis();} \
+} while (0)\
+
 void errorLoop() {
   while(true) { delay(100); }   // parpadeo o indicador de error
 }
+
+enum states {
+  WAITING_AGENT,        // Waiting for ROS 2 agent connection
+  AGENT_AVAILABLE,      // Agent detected
+  AGENT_CONNECTED,      // Successfully connected
+  AGENT_DISCONNECTED    // Connection lost
+} state;
+
+bool create_entities();
+void destroy_entities();
 
 // Funciones del motor
 void detener() {
@@ -116,13 +132,13 @@ void timer_callback(rcl_timer_t* timer, int64_t last_call_time) {
   if (motorEnMovimiento) {
     lecturaPWM();
 
-    msg_duty.data    = duty;
+    msg_duty.data = duty;
     msg_voltaje.data = voltaje;
-    msg_pwm.data     = (float)pwm;
+    msg_pwm.data = (float)pwm;
 
-    RCSOFTCHECK(rcl_publish(&pub_duty,    &msg_duty,    NULL));
+    RCSOFTCHECK(rcl_publish(&pub_duty, &msg_duty, NULL));
     RCSOFTCHECK(rcl_publish(&pub_voltaje, &msg_voltaje, NULL));
-    RCSOFTCHECK(rcl_publish(&pub_pwm,     &msg_pwm,     NULL));
+    RCSOFTCHECK(rcl_publish(&pub_pwm, &msg_pwm, NULL));
   }
 }
 
@@ -142,7 +158,10 @@ void setup() {
   Serial.begin(115200);
   set_microros_serial_transports(Serial);
   delay(2000);
+  
+}
 
+bool create_entities() {
   // Inicializar micro-ROS
   allocator = rcl_get_default_allocator();
   RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
@@ -180,15 +199,13 @@ void setup() {
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
       "motor/cmd"));
 
-  
-
   // Inicializar buffer del mensaje String
-  msg_cmd.data.data     = (char*)malloc(10 * sizeof(char));
-  msg_cmd.data.size     = 0;
+  msg_cmd.data.data = (char*)malloc(10 * sizeof(char));
+  msg_cmd.data.size = 0;
   msg_cmd.data.capacity = 10;
 
-  status.data.data     = (char*)malloc(20 * sizeof(char));
-  status.data.size     = 0;
+  status.data.data = (char*)malloc(20 * sizeof(char));
+  status.data.size = 0;
   status.data.capacity = 20;
 
   RCCHECK(rclc_timer_init_default(
@@ -202,8 +219,48 @@ void setup() {
   RCCHECK(rclc_executor_add_subscription(
       &executor, &sub_cmd, &msg_cmd,
       &cmd_callback, ON_NEW_DATA));
+  return true;
+}
+
+void destroy_entities() {
+  rclc_executor_fini(&executor);
+  rcl_timer_fini(&timer);
+  rcl_subscription_fini(&sub_cmd, &node);
+  rcl_publisher_fini(&pub_duty, &node);
+  rcl_publisher_fini(&pub_voltaje, &node);
+  rcl_publisher_fini(&pub_pwm, &node);
+  rcl_publisher_fini(&pub_status, &node);
+  rcl_node_fini(&node);
+  rclc_support_fini(&support);
 }
 
 void loop() {
-  RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
+  switch (state) {
+
+    case WAITING_AGENT:
+      EXECUTE_EVERY_N_MS(500, state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_AVAILABLE : WAITING_AGENT;);
+      break;
+
+    case AGENT_AVAILABLE:
+      state = (true == create_entities()) ? AGENT_CONNECTED : WAITING_AGENT;
+      if (state == WAITING_AGENT) {
+        destroy_entities();
+      };
+      break;
+
+    case AGENT_CONNECTED:
+      EXECUTE_EVERY_N_MS(200, state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_CONNECTED : AGENT_DISCONNECTED;);
+      if (state == AGENT_CONNECTED) {
+        rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+      }
+      break;
+
+    case AGENT_DISCONNECTED:
+      destroy_entities();
+      state = WAITING_AGENT;
+      break;
+      
+    default:
+      break;
+  }
 }
