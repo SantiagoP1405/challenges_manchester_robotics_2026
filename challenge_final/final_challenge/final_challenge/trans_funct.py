@@ -2,21 +2,21 @@
 """
 motor_identification_node.py
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Nodo ROS2 para identificación de motor DC a lazo abierto.
+ROS2 node for open-loop DC motor identification.
 
-Publica (graficables en rqt_plot):
-  /motor/pwm_input   [std_msgs/Float64]  Señal de entrada PWM (-1 a 1)
-  /motor/speed_rpm   [std_msgs/Float64]  Velocidad medida (RPM)
-  /motor/position    [std_msgs/Float64]  Posición acumulada (grados)
+Publishes (plottable in rqt_plot):
+  /motor/pwm_input   [std_msgs/Float64]  PWM input signal (-1 to 1)
+  /motor/speed_rpm   [std_msgs/Float64]  Measured speed (RPM)
+  /motor/position    [std_msgs/Float64]  Accumulated position (degrees)
 
-Suscripción:
-  /motor/cmd_pwm     [std_msgs/Float64]  Comando externo (opcional)
+Subscription:
+  /motor/cmd_pwm     [std_msgs/Float64]  Optional external command
 
-Parámetros ROS2 (ros2 run ... --ros-args -p <param>:=<val>):
-  port          (str)   Puerto serial      [default: /dev/ttyUSB0]
+ROS2 Parameters (ros2 run ... --ros-args -p <param>:=<val>):
+  port          (str)   Serial port        [default: /dev/ttyUSB0]
   baud          (int)   Baudrate           [default: 115200]
-  step_pwm      (float) Amplitud escalón   [default: 0.5 → 50% PWM]
-  step_duration (float) Duración escalón   [default: 3.0 s]
+  step_pwm      (float) Step amplitude     [default: 0.5 → 50% PWM]
+  step_duration (float) Step duration      [default: 3.0 s]
   signal_type   (str)   step | prbs | ramp [default: step]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
@@ -37,7 +37,7 @@ class MotorIdentificationNode(Node):
     def __init__(self):
         super().__init__('motor_identification')
 
-        # ── Declarar parámetros ──────────────────────────────
+        # ── Declare parameters ──────────────────────────────
         self.declare_parameter('port',          '/dev/ttyACM0')
         self.declare_parameter('baud',          115200)
         self.declare_parameter('step_pwm',      1.0)
@@ -50,45 +50,45 @@ class MotorIdentificationNode(Node):
         self.step_dur = self.get_parameter('step_duration').value
         self.sig_type = self.get_parameter('signal_type').value
 
-        # ── Publicadores ─────────────────────────────────────
+        # ── Publishers ─────────────────────────────────────
         self.pub_pwm   = self.create_publisher(Float64, '/motor/pwm_input',  10)
         self.pub_speed = self.create_publisher(Float64, '/motor/speed_rpm',  10)
         self.pub_pos   = self.create_publisher(Float64, '/motor/position',   10)
 
-        # ── Suscriptor (comando externo opcional) ─────────────
+        # ── Subscriber (optional external command) ─────────
         self.create_subscription(Float64, '/motor/cmd_pwm',
                                  self._cmd_callback, 10)
 
-        # ── Estado interno ────────────────────────────────────
-        self._external_cmd  = None   # None = modo automático
+        # ── Internal state variables ───────────────────────
+        self._external_cmd  = None   # None = automatic mode
         self._current_pwm   = 0.0
         self._running       = True
 
-        # ── Abrir puerto serial ───────────────────────────────
+        # ── Open serial port ───────────────────────────────
         try:
             self.ser = serial.Serial(port, baud, timeout=0.1)
-            time.sleep(2.0)          # Esperar reset ESP32
+            time.sleep(2.0)          # Wait for ESP32 reset
             self.ser.flushInput()
-            self.get_logger().info(f'Puerto serial abierto: {port} @ {baud}')
+            self.get_logger().info(f'Serial port opened: {port} @ {baud}')
         except serial.SerialException as e:
-            self.get_logger().error(f'No se pudo abrir {port}: {e}')
+            self.get_logger().error(f'Could not open {port}: {e}')
             raise
 
-        # ── Hilo de lectura serial ────────────────────────────
+        # ── Serial reading thread ──────────────────────────
         self._read_thread = threading.Thread(target=self._read_serial, daemon=True)
         self._read_thread.start()
 
-        # ── Hilo generador de señal ───────────────────────────
+        # ── Signal generator thread ────────────────────────
         self._signal_thread = threading.Thread(target=self._signal_generator, daemon=True)
         self._signal_thread.start()
 
         self.get_logger().info(
-            f'Nodo iniciado | señal: {self.sig_type} | '
-            f'PWM step: {self.step_pwm:.2f} | duración: {self.step_dur}s'
+            f'Node started | signal: {self.sig_type} | '
+            f'Step PWM: {self.step_pwm:.2f} | duration: {self.step_dur}s'
         )
 
     # ─────────────────────────────────────────────────────────
-    #  Lectura Serial (hilo separado)
+    #  Serial reading thread
     # ─────────────────────────────────────────────────────────
     def _read_serial(self):
         while self._running:
@@ -110,14 +110,14 @@ class MotorIdentificationNode(Node):
                         self.pub_pos.publish(Float64(data=pos_deg))
 
                 elif line == 'READY':
-                    self.get_logger().info('ESP32 lista.')
+                    self.get_logger().info('ESP32 ready.')
 
             except Exception as e:
                 if self._running:
-                    self.get_logger().warn(f'Error lectura serial: {e}')
+                    self.get_logger().warn(f'Serial read error: {e}')
 
     # ─────────────────────────────────────────────────────────
-    #  Enviar comando PWM a ESP32
+    #  Send PWM command to ESP32
     # ─────────────────────────────────────────────────────────
     def _send_pwm(self, pwm_norm: float):
         pwm_norm = max(-1.0, min(1.0, pwm_norm))
@@ -127,31 +127,31 @@ class MotorIdentificationNode(Node):
         try:
             self.ser.write(cmd.encode())
         except Exception as e:
-            self.get_logger().error(f'Error escritura serial: {e}')
+            self.get_logger().error(f'Serial write error: {e}')
 
     # ─────────────────────────────────────────────────────────
-    #  Callback comando externo
+    #  External command callback
     # ─────────────────────────────────────────────────────────
     def _cmd_callback(self, msg: Float64):
         self._external_cmd = msg.data
         self._send_pwm(msg.data)
 
     # ─────────────────────────────────────────────────────────
-    #  Generador de señal de identificación
+    #  Identification signal generator
     # ─────────────────────────────────────────────────────────
     def _signal_generator(self):
         """
-        Genera la señal de excitación al motor.
+        Generates the excitation signal for motor identification.
 
-        step : Escalón 0 → step_pwm → 0 ... (ciclo infinito)
-        prbs : Secuencia binaria pseudo-aleatoria  (útil para ARX/BJ)
-        ramp : Rampa sube/baja entre 0 y step_pwm
+        step : Step input 0 → step_pwm → 0 ... (infinite cycle)
+        prbs : Pseudo-random binary sequence (useful for ARX/BJ models)
+        ramp : Ramp up/down between 0 and step_pwm
         """
-        time.sleep(1.0)   # Esperar que ESP32 esté lista
+        time.sleep(1.0)   # Wait for ESP32 to be ready
 
         while self._running:
             if self._external_cmd is not None:
-                # En modo manual, el generador cede el control
+                # In manual mode, the generator releases control
                 time.sleep(0.1)
                 continue
 
@@ -162,20 +162,20 @@ class MotorIdentificationNode(Node):
             elif self.sig_type == 'ramp':
                 self._run_ramp()
             else:
-                self.get_logger().warn(f'signal_type desconocido: {self.sig_type}')
+                self.get_logger().warn(f'Unknown signal_type: {self.sig_type}')
                 time.sleep(1.0)
 
-    # ── Señal escalón ─────────────────────────────────────────
+    # ── Step input signal ───────────────────────────────────
     def _run_step(self):
-        self.get_logger().info('Aplicando escalón positivo...')
+        self.get_logger().info('Applying positive step input...')
         self._send_pwm(self.step_pwm)
         time.sleep(self.step_dur)
 
-        self.get_logger().info('Motor OFF (reposo)...')
+        self.get_logger().info('Motor OFF (rest period)...')
         self._send_pwm(0.0)
         time.sleep(self.step_dur)
 
-    # ── Señal PRBS ────────────────────────────────────────────
+    # ── PRBS signal ─────────────────────────────────────────
     def _run_prbs(self):
         levels = [0.0, self.step_pwm, -self.step_pwm]
         pwm    = random.choice(levels)
@@ -183,22 +183,23 @@ class MotorIdentificationNode(Node):
         hold   = random.uniform(0.3, self.step_dur)
         time.sleep(hold)
 
-    # ── Señal rampa ───────────────────────────────────────────
+    # ── Ramp signal ─────────────────────────────────────────
     def _run_ramp(self):
         steps = 50
         dt    = self.step_dur / steps
 
-        # Subida
+        # Ramp up
         for i in range(steps + 1):
             self._send_pwm(self.step_pwm * i / steps)
             time.sleep(dt)
-        # Bajada
+
+        # Ramp down
         for i in range(steps, -1, -1):
             self._send_pwm(self.step_pwm * i / steps)
             time.sleep(dt)
 
     # ─────────────────────────────────────────────────────────
-    #  Destructor
+    #  Node destructor
     # ─────────────────────────────────────────────────────────
     def destroy_node(self):
         self._running = False
@@ -218,7 +219,7 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info('Deteniendo nodo...')
+        node.get_logger().info('Stopping node...')
     finally:
         node.destroy_node()
         rclpy.shutdown()
