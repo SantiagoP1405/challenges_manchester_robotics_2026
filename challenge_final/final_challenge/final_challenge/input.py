@@ -10,21 +10,25 @@ class SetPointPublisher(Node):
     def __init__(self):
         super().__init__('input_node')
         
-        # Parameters for the sine wave signal
-        self.declare_parameter('amplitude', 30 * ((2*np.pi) / 60)) 
-        self.declare_parameter('omega', 0.3)
-        self.declare_parameter('timer_period', 0.02)
+        # Parameters for the input signal
+        self.declare_parameter('amplitude', 17 * ((2*np.pi) / 60)) # Convert 17 RPM to rad/s. 
+        # This is the maximum speed of the motor, so it ensures that the input signal is within the system's capabilities.
+        self.declare_parameter('omega', 0.3) # Frequency of the input signal (rad/s). This value is chosen to be low enough 
+        # to allow the system to respond, but high enough to test the dynamics of the system.
+        self.declare_parameter('timer_period', 0.02) # Timer period for publishing the input signal (s). 
+        # This value is chosen to be small enough to provide a smooth signal,
 
         self.declare_parameter('signal_type', 'sine')  # New parameter for signal type
-
-        # Retrieve sine wave parameters
+        # This parameter allows switching between different types of input signals.
+        
+        # Retrieve input signal parameters
         self.amplitude = self.get_parameter('amplitude').value
         self.omega  = self.get_parameter('omega').value
         self.timer_period = self.get_parameter('timer_period').value
         self.signal_type = self.get_parameter('signal_type').value
 
         #Create a publisher and timer for the signal
-        self.signal_publisher = self.create_publisher(Float32, 'set_point', 10)    ## CHECK FOR THE NAME OF THE TOPIC
+        self.signal_publisher = self.create_publisher(Float32, 'set_point', 10) 
         self.timer = self.create_timer(self.timer_period, self.timer_cb)
         
         #Create a messages and variables to be used
@@ -34,15 +38,17 @@ class SetPointPublisher(Node):
 
         self.get_logger().info("SetPoint Node Started \U0001F680")
 
-    # Timer Callback: Generate and Publish Sine Wave Signal
+    # Timer Callback: Generate and Publish Input Signal
     def timer_cb(self):
         #Calculate elapsed time
         elapsed_time = (self.get_clock().now() - self.start_time).nanoseconds/1e9
         # Generate sine wave signal
         if self.signal_type == 'sine':
             self.signal_msg.data = self.amplitude * np.sin(self.omega * elapsed_time)
+        #Generate square signal
         elif self.signal_type == 'square':
             self.signal_msg.data = self.amplitude * np.sign(np.sin(self.omega * elapsed_time))
+        # Generate step signal
         elif self.signal_type == 'step':
             self.signal_msg.data = self.amplitude if elapsed_time > 1.0 else 0.0
         # Publish the signal
