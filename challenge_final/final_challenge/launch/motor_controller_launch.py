@@ -10,7 +10,7 @@ def generate_launch_description():
                       emulate_tty=True,
                       output='screen',
                       parameters=[{
-                            'amplitude':  22 * (2*np.pi / 60),
+                            'amplitude':  17 * (2*np.pi / 60),
                             'omega': 0.3,
                             'timer_period': 0.02,
                             'signal_type': 'sine',

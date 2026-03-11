@@ -16,7 +16,6 @@
 #define PWM_RESOLUTION 8
 #define PWM_FREQ 980 //980 hz
 
-#define RPM_MAX 23.0f
 
 
 // ── Encoder ───────────────────────────────────────────────────
@@ -44,6 +43,9 @@ std_msgs__msg__Float32 pwm_msg;
 
 rcl_publisher_t publisher_speed;
 std_msgs__msg__Float32 speed_msg;
+
+rcl_publisher_t publisher_speed_rpm;
+std_msgs__msg__Float32 speed_rpm_msg;
 
 rclc_executor_t executor;
 rclc_support_t support;
@@ -120,14 +122,16 @@ void pose()
     }
   }
 
-  // Velocidad en RPM mediante delta de tiempo entre pulsos
+  // FIX 1: variable LOCAL "velocidad_nueva" para no ocultar la global "velocidad"
   float velocidad_nueva = 60000000.0 / ((float)pulsos * (float)delta_tiempo);
   velocidad_nueva = abs(velocidad_nueva);
   if (!encoderDirection) velocidad_nueva = -velocidad_nueva;
 
-  // Normalizar a 0-1 antes de publicar
-  float alpha = 0.05f;
+  // FIX 2: EMA correcto — mezcla el valor nuevo con el valor ANTERIOR de la global
+  float alpha = 0.3f;  // más reactivo que 0.05 para señales sinusoidales
   velocidad = alpha * velocidad_nueva + (1.0f - alpha) * velocidad;
+
+  // Conversión RPM → rad/s para publicar en motor_w
   velocidad_rad_s = (velocidad * 2.0f * PI) / 60.0f;
 }
 
@@ -191,6 +195,12 @@ bool create_entities() {
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
     "motor_w"));
 
+  RCCHECK(rclc_publisher_init_default(
+    &publisher_speed_rpm,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
+    "motor_w_rpm"));
+
   std_msgs__msg__Float32__init(&pwm_msg);
   RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_pwm, &pwm_msg, &pwm_callback, ON_NEW_DATA));  
@@ -202,6 +212,7 @@ bool create_entities() {
 void destroy_entities() {
   rcl_subscription_fini(&subscriber_pwm, &node);
   rcl_publisher_fini(&publisher_speed, &node);
+  rcl_publisher_fini(&publisher_speed_rpm, &node);
   rcl_node_fini(&node);
   rclc_executor_fini(&executor);
   rclc_support_fini(&support);
@@ -229,7 +240,9 @@ void loop(){
         EXECUTE_EVERY_N_MS(20, {
           pose();
           speed_msg.data = velocidad_rad_s;
+          speed_rpm_msg.data = velocidad;
           RCSOFTCHECK(rcl_publish(&publisher_speed, &speed_msg, NULL));
+          RCSOFTCHECK(rcl_publish(&publisher_speed_rpm, &speed_rpm_msg, NULL));
         });
       }
       break;

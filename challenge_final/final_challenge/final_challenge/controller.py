@@ -26,9 +26,10 @@ class Controller(Node):
         # Initialize variables
         self.set_point = 0.0
         self.motor_w = 0.0
+        self.debug_motor_w = 0.0
         self.deathzone = 0.3
-        self.rpm_max = 22.0
-        self.w_max = 22 * ((2*np.pi) / 60)
+        self.rpm_max = 17.0
+        self.w_max = 17 * ((2*np.pi) / 60)
         
         # Controller parameters
         # Proportional gain
@@ -51,11 +52,12 @@ class Controller(Node):
         self.set_point = msg.data / self.w_max
 
     def motor_w_callback(self, msg):
+        self.debug_motor_w = msg.data
         self.motor_w = msg.data / self.w_max
 
     def timer_callback(self):
         error = self.set_point - self.motor_w
-        self.get_logger().info(f"SP: {self.set_point:.2f}, W: {self.motor_w:.2f}, E: {error:.2f}")
+        self.get_logger().info(f"SP: {self.set_point:.2f}, W: {self.debug_motor_w:.2f}, E: {error:.2f}")
 
         error_der = (error - self.error_prev) / self.Ts
         self.error_prev = error
@@ -63,9 +65,9 @@ class Controller(Node):
         # PID sin integrar todavía
         u = self.kp * error + self.ki * self.error_int + self.kd * error_der
 
-        # # Anti-windup: solo integra si la salida NO está saturada
-        # if abs(u) < 1.0:
-        #     self.error_int += error * self.Ts
+        # Anti-windup: solo integra si la salida NO está saturada
+        if abs(u) < 1.0:
+            self.error_int += error * self.Ts
 
         # Recalcular con el integrador actualizado
         u = self.kp * error + self.ki * self.error_int + self.kd * error_der

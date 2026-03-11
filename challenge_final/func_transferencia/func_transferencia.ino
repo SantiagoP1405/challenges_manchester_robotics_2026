@@ -126,7 +126,7 @@ void pose()
   velocidad = 60000000.0 / ((float)pulsos * (float)delta_tiempo);
   if (velocidad < 0)
     velocidad = abs(velocidad);
-    velocidad = round(velocidad);
+    //velocidad = round(velocidad);
 
   encoderDirection = false;
 }
