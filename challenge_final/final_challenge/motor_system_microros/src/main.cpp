@@ -19,27 +19,32 @@
 
 
 // ── Encoder ───────────────────────────────────────────────────
-float   resolucion  = 0.0858983536;  // grados por pulso
-int     pulsos      = 4191;          // pulsos por vuelta a la salida
+float resolution = 0.0858983536;  // degrees per pulse
+int pulses = 4191;          // pulses per revolution at the gearbox output
 
-int32_t tiempo_act   = 0;
-int32_t tiempo_ant   = 0;
-int32_t delta_tiempo = 2000000000;   // valor inicial grande para evitar /0
-int32_t contador     = 0;
-int32_t revoluciones = 0;
-float   posicion     = 0;
-float   velocidad    = 0;
-float   velocidad_norm = 0;
-float velocidad_rad_s = 0;
+// Timing variables used to estimate velocity
+int32_t time_act   = 0;
+int32_t time_ant   = 0;
+int32_t delta_time = 2000000000;   // large initial value to avoid division by zero
 
+// Encoder state variables
+int32_t counter     = 0;
+int32_t revolutions = 0;
+
+// Estimated motion variables
+float   position     = 0;
+float   speed    = 0; // speed in RPM
+float   speed_norm = 0;
+float speed_rad_s = 0; // speed in rad/s
+
+// Encoder direction flags
 volatile bool BSet            = false;
 volatile bool ASet            = false;
 volatile bool encoderDirection = false;
 
-
-
 int pwm_value = 0;
 
+// micro-ROS entities
 rcl_subscription_t subscriber_pwm;
 std_msgs__msg__Float32 pwm_msg;
 
@@ -54,6 +59,7 @@ rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
 
+// Error handling macros
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
 
@@ -70,6 +76,7 @@ void error_loop() {
   }
 }
 
+// micro-ROS connection state machine
 enum states {
   WAITING_AGENT,        // Waiting for ROS 2 agent connection
   AGENT_AVAILABLE,      // Agent detected
@@ -82,6 +89,8 @@ bool create_entities();
 void destroy_entities();
 
 // Encoder ISR
+// Triggered on every change of encoder channel A.
+// Direction is determined by comparing channels A and B.
 void IRAM_ATTR Encoder()
 {
   BSet = digitalRead(EncB);
@@ -89,66 +98,80 @@ void IRAM_ATTR Encoder()
 
   if (BSet == ASet)
   {
-    contador++;
+    counter++;
     encoderDirection = true;
   }
   else
   {
-    contador--;
+    counter--;
     encoderDirection = false;
   }
 
-  tiempo_act   = micros();
-  delta_tiempo = tiempo_act - tiempo_ant;
-  tiempo_ant   = tiempo_act;
+  // Measure time between pulses for velocity estimation
+  time_act   = micros();
+  delta_time = time_act - time_ant;
+  time_ant   = time_act;
 }
-// Pose estimation
+// Position and velocity estimation
 void pose()
 {
-  if (encoderDirection)
+  if (encoderDirection) // Update angular position
   {
-    posicion = contador * resolucion;
-    if (contador >= pulsos)
+    position = counter * resolution;
+    if (counter >= pulses)
     {
-      revoluciones++;
-      contador = 0;
+      revolutions++;
+      counter = 0;
     }
   }
   else
   {
-    posicion = contador * resolucion;
-    if (contador <= -pulsos)
+    position = counter * resolution;
+    if (counter <= -pulses)
     {
-      revoluciones--;
-      contador = 0;
+      revolutions--;
+      counter = 0;
     }
   }
 
-  // FIX 1: variable LOCAL "velocidad_nueva" para no ocultar la global "velocidad"
-  float velocidad_nueva = 60000000.0 / ((float)pulsos * (float)delta_tiempo);
-  velocidad_nueva = abs(velocidad_nueva);
-  if (!encoderDirection) velocidad_nueva = -velocidad_nueva;
+  float speed_new = 60000000.0 / ((float)pulses * (float)delta_time);
+  speed_new = abs(speed_new);
+  if (!encoderDirection) speed_new = -speed_new;
 
-  // FIX 2: EMA correcto — mezcla el valor nuevo con el valor ANTERIOR de la global
-  float alpha = 0.15f;  // más reactivo que 0.05 para señales sinusoidales
-  velocidad = alpha * velocidad_nueva + (1.0f - alpha) * velocidad;
+   // Exponential Moving Average filter used to smooth the velocity estimate.
+  // The instantaneous velocity computed from encoder pulse timing can be very noisy
+  // due to quantization effects, jitter in pulse timing, and ISR latency.
+  // The EMA filter reduces high-frequency noise by combining the new measurement
+  // with the previous filtered value:
+  //      v_filtered = α * v_new + (1 - α) * v_previous
+  // where:
+  //   α (alpha) is the smoothing factor in the range (0,1)
+  // In this case α = 0.15 provides a good compromise between noise reduction
+  // and responsiveness for motor speed measurements.
+  float alpha = 0.15f;  
+  speed = alpha * speed_new + (1.0f - alpha) * speed;
 
-  // Conversión RPM → rad/s para publicar en motor_w
-  velocidad_rad_s = (velocidad * 2.0f * PI) / 60.0f;
+  // Convert RPM to rad/s (used by the ROS controller)
+  speed_rad_s = (speed * 2.0f * PI) / 60.0f;
 }
 
-void feedback_callback(){
-  pose();
-}
+// Wrapper function used if feedback processing is needed
+// void feedback_callback(){
+//   pose();
+// }
 
+// PWM command callback 
+// Receives the normalized control signal [-1,1] from ROS
+// and converts it to an 8-bit PWM signal.
 void pwm_callback(const void *msgin){
   const std_msgs__msg__Float32 *msg_in = (const std_msgs__msg__Float32 *)msgin;
   float value = msg_in->data;
 
   float mag = fabs(value);      
-  uint8_t pwm_value = (uint8_t) roundf(mag * 255.0f);  // necesita <math.h>
-  if (pwm_value > 255) pwm_value = 255;  // Restringe el valor a  entre -1 y 1, y luego escala a 0-255
+  uint8_t pwm_value = (uint8_t) roundf(mag * 255.0f);  // Scale normalized input to PWM range [0,255]
+  if (pwm_value > 255) pwm_value = 255;  
 
+  // Direction control using H-bridge logic
   if (value >= 0.0f) {
     digitalWrite(LED_PIN_P, HIGH);
     digitalWrite(LED_PIN_N, LOW);
@@ -179,24 +202,28 @@ void setup(){
 
 }
 
+// Create ROS 2 entities
 bool create_entities() {
   allocator = rcl_get_default_allocator();
 
   RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
   RCCHECK(rclc_node_init_default(&node, "motor", "", &support));
 
+  // Subscriber for control input
   RCCHECK(rclc_subscription_init_default(
     &subscriber_pwm,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
     "motor_input"));
-
+  
+  // Publisher for angular velocity in rad/s
   RCCHECK(rclc_publisher_init_default(
     &publisher_speed,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
     "motor_w"));
 
+  // Publisher for angular velocity in RPM (used for debugging)  
   RCCHECK(rclc_publisher_init_default(
     &publisher_speed_rpm,
     &node,
@@ -211,6 +238,7 @@ bool create_entities() {
   return true;
 }
 
+// Destroy ROS 2 entities if connection is lost
 void destroy_entities() {
   rcl_subscription_fini(&subscriber_pwm, &node);
   rcl_publisher_fini(&publisher_speed, &node);
@@ -220,6 +248,7 @@ void destroy_entities() {
   rclc_support_fini(&support);
 }
 
+// Main loop with connection state machine
 void loop(){
   switch (state) {
 
@@ -239,16 +268,18 @@ void loop(){
       if (state == AGENT_CONNECTED) {
         rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
         
+        // Publish motor speed at 50 Hz
         EXECUTE_EVERY_N_MS(20, {
           pose();
-          speed_msg.data = velocidad_rad_s;
-          speed_rpm_msg.data = velocidad;
+          speed_msg.data = speed_rad_s;
+          speed_rpm_msg.data = speed;
           RCSOFTCHECK(rcl_publish(&publisher_speed, &speed_msg, NULL));
           RCSOFTCHECK(rcl_publish(&publisher_speed_rpm, &speed_rpm_msg, NULL));
         });
       }
       break;
-
+    
+    // If connection is lost, destroy entities and restart
     case AGENT_DISCONNECTED:
       destroy_entities();
       state = WAITING_AGENT;
