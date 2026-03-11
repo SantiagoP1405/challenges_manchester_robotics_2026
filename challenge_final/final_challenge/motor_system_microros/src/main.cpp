@@ -36,6 +36,8 @@ volatile bool BSet            = false;
 volatile bool ASet            = false;
 volatile bool encoderDirection = false;
 
+
+
 int pwm_value = 0;
 
 rcl_subscription_t subscriber_pwm;
@@ -128,7 +130,7 @@ void pose()
   if (!encoderDirection) velocidad_nueva = -velocidad_nueva;
 
   // FIX 2: EMA correcto — mezcla el valor nuevo con el valor ANTERIOR de la global
-  float alpha = 0.3f;  // más reactivo que 0.05 para señales sinusoidales
+  float alpha = 0.15f;  // más reactivo que 0.05 para señales sinusoidales
   velocidad = alpha * velocidad_nueva + (1.0f - alpha) * velocidad;
 
   // Conversión RPM → rad/s para publicar en motor_w
