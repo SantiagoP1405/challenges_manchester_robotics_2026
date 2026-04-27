@@ -28,10 +28,10 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'controller_sqr = puzzlebot_tuned_controller.controller_sqr:main',
             'puzzlebot_odometry = puzzlebot_tuned_controller.puzzlebot_odometry:main',
             'path_generator_node = puzzlebot_tuned_controller.path_generator_node:main',
             'controller_path = puzzlebot_tuned_controller.controller_path:main',
+            'traffic_light_node = puzzlebot_tuned_controller.traffic_light_node:main',
         ],
     },
 )

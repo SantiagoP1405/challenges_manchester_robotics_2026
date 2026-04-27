@@ -1,3 +1,4 @@
+from std_msgs import String
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
@@ -35,6 +36,7 @@ class ControllerPath(Node):
         self.current_x, self.current_y, self.current_theta = 0.0, 0.0, 0.0
         self.goal_x, self.goal_y = None, None
         self.v_limit, self.w_limit = 0.0, 0.0
+        self.state = "STOP"
 
         # Variables PID
         self.prev_dist_error = 0.0
@@ -45,6 +47,7 @@ class ControllerPath(Node):
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
         self.goal_sub = self.create_subscription(MakbetsPose, '/goal', self.goal_callback, 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.light_sub = self.create_subscription(String, '/detected_color', self.light_callback, 10)
         
         self.dt = 0.05
         self.timer = self.create_timer(self.dt, self.control_loop)
@@ -74,12 +77,42 @@ class ControllerPath(Node):
             self.goal_y = msg.y[0]
             self.v_limit = msg.linear_speed[0]
             self.w_limit = msg.angular_speed[0]
+    
+    def light_callback(self, msg):
+        color = msg.data
+        if color == "NONE":
+            return  
+        if color == "ROJO":
+            self.state = "STOP"
+        elif color == "AMARILLO":
+            self.state = "SLOW"
+        elif color == "VERDE":
+            self.state = "GO"
 
     def normalize_angle(self, angle):
         return math.atan2(math.sin(angle), math.cos(angle))
 
     def control_loop(self):
         if self.goal_x is None: return
+
+        # Factor de velocidad según el semáforo 
+        if self.state == "STOP":
+            factor = 0.0
+        elif self.state == "SLOW":
+            factor = 0.3
+        elif self.state == "GO":
+            factor = 1.0
+        else:
+            factor = 0.0
+
+        v_max = self.v_limit * factor
+        w_max = self.w_limit * factor
+
+        if self.state == "STOP":
+            cmd = Twist()
+            cmd.linear.x = 0.0
+            cmd.angular.z = 0.0
+            self.cmd_pub.publish(cmd)
 
         dx = self.goal_x - self.current_x
         dy = self.goal_y - self.current_y
@@ -113,11 +146,11 @@ class ControllerPath(Node):
             # Lógica de estados: Giro o Avance
             if abs(theta_error) > self.theta_tolerance:
                 cmd.linear.x = 0.0
-                cmd.angular.z = max(-self.w_limit, min(self.w_limit, w_out))
+                cmd.angular.z = max(-w_max, min(w_max, w_out))
             else:
                 # Mientras avanza, sigue corrigiendo ángulo suavemente
-                cmd.linear.x = max(0.0, min(self.v_limit, v_out))
-                cmd.angular.z = max(-self.w_limit, min(self.w_limit, w_out))
+                cmd.linear.x = max(0.0, min(v_max, v_out))
+                cmd.angular.z = max(-w_max, min(w_max, w_out))
 
         self.cmd_pub.publish(cmd)
         self.prev_dist_error = dist_error
