@@ -8,7 +8,6 @@ class PathGenerator(Node):
     def __init__(self):
         super().__init__('path_generator_node')
 
-        # 1. Parámetros: Definimos 4 puntos por defecto (un cuadrado de 1m)
         self.declare_parameter('points_x', [1.0, 1.0, 0.0, 0.0])
         self.declare_parameter('points_y', [0.0, 1.0, 1.0, 0.0])
         self.declare_parameter('v_max', 0.2)

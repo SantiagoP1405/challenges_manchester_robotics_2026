@@ -4,11 +4,11 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('puzzlebot_tuned_controller')
+    pkg_share = get_package_share_directory('puzzlebot_closeloop')
     params_file = os.path.join(pkg_share, 'config', 'puzzlebot_params.yaml')
 
     odom_node = Node(
-        package='puzzlebot_tuned_controller',
+        package='puzzlebot_closeloop',
         executable='puzzlebot_odometry', 
         name='puzzlebot_odometry',
         parameters=[params_file],
@@ -16,7 +16,7 @@ def generate_launch_description():
     )
 
     controller_node = Node(
-        package='puzzlebot_tuned_controller',
+        package='puzzlebot_closeloop',
         executable='controller_path',
         name='controller_path',
         parameters=[params_file],
@@ -24,7 +24,7 @@ def generate_launch_description():
     )
 
     path_gen_node = Node(
-        package='puzzlebot_tuned_controller',
+        package='puzzlebot_closeloop',
         executable='path_generator_node',
         name='path_generator_node',
         parameters=[params_file],

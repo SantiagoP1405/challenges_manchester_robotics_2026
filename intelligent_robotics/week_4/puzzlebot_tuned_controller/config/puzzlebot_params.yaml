@@ -1,39 +1,45 @@
 puzzlebot_odometry:
-  ros__parameters:
-    wheel_radius: 0.05
-    wheel_base: 0.19
-    odom_topic: /odom
-    encR_topic: /VelocityEncR
-    encL_topic: /VelocityEncL
-    sample_time: 0.02
+    ros__parameters:
+      wheel_radius: 0.05
+      wheel_base: 0.19
+      odom_topic: /odom
+      encR_topic: /VelocityEncR
+      encL_topic: /VelocityEncL
+      sample_time: 0.02
 
 controller_sqr:
-  ros__parameters:
-    odom_topic: /odom
-    cmd_vel_topic: /cmd_vel
-    control_period: 0.1
+    ros__parameters:
+      odom_topic: /odom
+      cmd_vel_topic: /cmd_vel
+      control_period: 0.1
 
-    kp_dist: 0.8
-    kp_theta: 2.0
-    v_max: 0.3
-    w_max: 0.7
-    goal_tolerance: 0.05
-    theta_tolerance: 0.15
+      kp_dist: 0.8
+      kp_theta: 2.0
+      v_max: 0.3
+      w_max: 0.7
+      goal_tolerance: 0.05
+      theta_tolerance: 0.15
 
-    goals: [2.0, 0.0,
-            2.0, 2.0,
-            0.0, 2.0,
-            0.0, 0.0]
-
-            
+      goals: [2.0, 0.0,
+              2.0, 2.0,
+              0.0, 2.0,
+              0.0, 0.0]
+              
 controller_path:
-  ros__parameters:
-    kp_dist: 0.9
-    kp_theta: 0.3
-    theta_tolerance: 0.15
-    goal_tolerance: 0.1
+    ros__parameters:
+      kp_dist: 0.99  
+      kp_theta: 0.7 #0.50
+      ki_dist: 0.000
+      ki_theta: 0.000 #0.001
+      kd_dist: 0.06
+      kd_theta: 0.01 #0.01
+      theta_tolerance: 0.1
+      goal_tolerance: 0.1
 
 path_generator_node:
-  ros__parameters:
-    modo: 1
-    puntos_manuales: [2.0, 0.0, 2.0, 2.0, 0.0, 2.0, 0.0, 0.0]
+    ros__parameters:  
+      points_x: [1.0, 0.0, 0.0]
+      points_y: [0.0, 1.0, 0.0]
+      v_max: 0.3
+      w_max: 0.7
+      arrival_tolerance: 0.15
