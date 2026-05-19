@@ -8,7 +8,7 @@ publica /cmd_vel.
 Topics de entrada:
   /lane/lookahead_point  geometry_msgs/Point   (coords de imagen)
   /lane/visible          std_msgs/Bool
-  /detected_color        std_msgs/String        ← NUEVO: "ROJO","AMARILLO","VERDE","NONE"
+  /detected_color        std_msgs/String        (ROJO, AMARILLO, VERDE, NONE)
 
 Topic de salida:
   /cmd_vel               geometry_msgs/Twist
